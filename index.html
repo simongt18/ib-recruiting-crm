@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IB Recruiting CRM</title>
+    <link rel="icon" href="https://github.com/simongt18/ib-recruiting-crm/blob/main/ChatGPT%20Image%20Feb%2012,%202026,%2012_46_53%20PM.png?raw=true">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -212,6 +213,9 @@
                         if (error) throw error;
                         setFirms(firms.filter(f => f.id !== id));
                         setContacts(contacts.filter(c => c.firm_id !== id));
+                        if (selectedFirm && selectedFirm.id === id) {
+                            setSelectedFirm(null);
+                        }
                     } catch (error) {
                         alert('Error deleting firm: ' + error.message);
                     }
@@ -303,107 +307,6 @@
                 }
             };
 
-            const handleImport = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-
-                const reader = new FileReader();
-                reader.onload = async (event) => {
-                    try {
-                        const jsonData = JSON.parse(event.target.result);
-                        if (!confirm(`Import data from ${jsonData.exportDate ? new Date(jsonData.exportDate).toLocaleDateString() : 'file'}? This will add to your existing data.`)) return;
-                        
-                        setLoading(true);
-                        const userId = session.user.id;
-                        const idMapping = { firms: {}, contacts: {} };
-
-                        // 1. Import Firms
-                        for (const firm of jsonData.firms || []) {
-                            const oldId = firm.id;
-                            const { data, error } = await supabase.from('firms').insert([{
-                                name: firm.name,
-                                division: firm.division,
-                                office: firm.office,
-                                ranking: firm.ranking,
-                                status: firm.status,
-                                notes: firm.notes,
-                                user_id: userId
-                            }]).select();
-                            
-                            if (error) throw error;
-                            if (data && data[0]) idMapping.firms[oldId] = data[0].id;
-                        }
-
-                        // 2. Import Contacts
-                        for (const contact of jsonData.contacts || []) {
-                            const oldId = contact.id;
-                            const oldFirmId = contact.firmId || contact.firm_id;
-                            const newFirmId = idMapping.firms[oldFirmId];
-                            
-                            if (newFirmId) {
-                                const { data, error } = await supabase.from('contacts').insert([{
-                                    name: contact.name,
-                                    title: contact.title,
-                                    email: contact.email,
-                                    phone: contact.phone,
-                                    linkedin: contact.linkedin,
-                                    connection_type: contact.connectionType || contact.connection_type,
-                                    status: contact.status,
-                                    notes: contact.notes,
-                                    firm_id: newFirmId,
-                                    user_id: userId
-                                }]).select();
-                                
-                                if (error) throw error;
-                                if (data && data[0]) idMapping.contacts[oldId] = data[0].id;
-                            }
-                        }
-
-                        // 3. Import Interactions
-                        for (const interaction of jsonData.interactions || []) {
-                            const oldContactId = interaction.contactId || interaction.contact_id;
-                            const newContactId = idMapping.contacts[oldContactId];
-                            
-                            if (newContactId) {
-                                await supabase.from('interactions').insert([{
-                                    type: interaction.type,
-                                    date: interaction.date,
-                                    notes: interaction.notes,
-                                    contact_id: newContactId,
-                                    user_id: userId
-                                }]);
-                            }
-                        }
-
-                        // 4. Import Reminders
-                        for (const reminder of jsonData.reminders || []) {
-                            const oldContactId = reminder.contactId || reminder.contact_id;
-                            const newContactId = idMapping.contacts[oldContactId];
-                            
-                            if (newContactId) {
-                                await supabase.from('reminders').insert([{
-                                    title: reminder.title,
-                                    date: reminder.date,
-                                    notes: reminder.notes,
-                                    completed: reminder.completed || false,
-                                    contact_id: newContactId,
-                                    user_id: userId
-                                }]);
-                            }
-                        }
-
-                        alert('Import successful!');
-                        fetchData();
-                    } catch (error) {
-                        console.error('Import error:', error);
-                        alert('Error importing data: ' + error.message);
-                        setLoading(false);
-                    }
-                };
-                reader.readAsText(file);
-                e.target.value = '';
-            };
-
             if (loading) {
                 return (
                     <div className="flex items-center justify-center h-screen">
@@ -427,16 +330,6 @@
                                     <p className="text-blue-100 text-sm mt-1">Track firms, contacts, and applications</p>
                                 </div>
                                 <div className="flex gap-2">
-                                    <label className="bg-blue-500 hover:bg-blue-400 px-3 py-1 rounded text-sm flex items-center gap-1 cursor-pointer text-white">
-                                        <i className="fas fa-upload"></i>
-                                        <span className="hidden md:inline">Import JSON</span>
-                                        <input
-                                            type="file"
-                                            accept=".json"
-                                            onChange={handleImport}
-                                            className="hidden"
-                                        />
-                                    </label>
                                     <button
                                         onClick={() => supabase.auth.signOut()}
                                         className="bg-blue-700 hover:bg-blue-800 px-3 py-1 rounded text-sm flex items-center gap-1"
@@ -556,6 +449,7 @@
                             interactions={interactions}
                             onClose={() => setSelectedFirm(null)}
                             onUpdateFirm={updateFirm}
+                            onDeleteFirm={deleteFirm}
                         />
                     )}
                     {selectedContact && (
@@ -1872,7 +1766,7 @@
             );
         }
 
-        function FirmDetailModal({ firm, contacts, interactions, onClose, onUpdateFirm }) {
+        function FirmDetailModal({ firm, contacts, interactions, onClose, onUpdateFirm, onDeleteFirm }) {
             const [isEditing, setIsEditing] = useState(false);
             const [formData, setFormData] = useState(firm);
 
@@ -2008,12 +1902,21 @@
                                         <p className="text-gray-900 whitespace-pre-wrap">{firm.notes}</p>
                                     </div>
                                 )}
-                                <button
-                                    onClick={() => setIsEditing(true)}
-                                    className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200"
-                                >
-                                    <i className="fas fa-edit mr-2"></i>Edit Firm Details
-                                </button>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setIsEditing(true)}
+                                        className="flex-1 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200"
+                                    >
+                                        <i className="fas fa-edit mr-2"></i>Edit Firm Details
+                                    </button>
+                                    <button
+                                        onClick={() => onDeleteFirm(firm.id)}
+                                        className="bg-red-100 text-red-700 px-4 py-2 rounded-lg hover:bg-red-200"
+                                        title="Delete Firm"
+                                    >
+                                        <i className="fas fa-trash"></i>
+                                    </button>
+                                </div>
                             </div>
                         )}
 
