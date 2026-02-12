@@ -9,6 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body class="bg-gray-50">
     <div id="root"></div>
@@ -16,25 +17,9 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // Browser localStorage utilities
-        const storage = {
-            get: (key) => {
-                try {
-                    const item = localStorage.getItem(key);
-                    return item ? JSON.parse(item) : null;
-                } catch (error) {
-                    console.error('Error reading from localStorage:', error);
-                    return null;
-                }
-            },
-            set: (key, value) => {
-                try {
-                    localStorage.setItem(key, JSON.stringify(value));
-                } catch (error) {
-                    console.error('Error writing to localStorage:', error);
-                }
-            }
-        };
+        const supabaseUrl = 'https://iajwmuuhpvvimtzcnjtm.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlhandtdXVocHZ2aW10emNuanRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4NTQ2MDcsImV4cCI6MjA4NjQzMDYwN30.KSSVVpOJBpXL0chYETYh0fvmD9wdlOeVZRuZe3ZhC-8';
+        const supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
         const APPLICATION_STATUSES = [
             'Not Applied',
@@ -109,7 +94,48 @@
             return `${city}, ${country}`;
         }
 
+        function Auth() {
+            const [loading, setLoading] = useState(false);
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [isSignUp, setIsSignUp] = useState(false);
+
+            const handleAuth = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                try {
+                    if (isSignUp) {
+                        const { error } = await supabase.auth.signUp({ email, password });
+                        if (error) throw error;
+                        alert('Check your email for the login link!');
+                    } else {
+                        const { error } = await supabase.auth.signInWithPassword({ email, password });
+                        if (error) throw error;
+                    }
+                } catch (error) {
+                    alert(error.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+                    <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-lg shadow">
+                        <h2 className="text-center text-3xl font-extrabold text-gray-900">{isSignUp ? 'Create Account' : 'Sign In'}</h2>
+                        <form className="mt-8 space-y-6" onSubmit={handleAuth}>
+                            <input type="email" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} />
+                            <input type="password" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                            <button type="submit" disabled={loading} className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">{loading ? 'Loading...' : (isSignUp ? 'Sign Up' : 'Sign In')}</button>
+                        </form>
+                        <div className="text-center"><button className="text-blue-600 hover:text-blue-500 text-sm" onClick={() => setIsSignUp(!isSignUp)}>{isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}</button></div>
+                    </div>
+                </div>
+            );
+        }
+
         function App() {
+            const [session, setSession] = useState(null);
             const [activeTab, setActiveTab] = useState('firms');
             const [firms, setFirms] = useState([]);
             const [contacts, setContacts] = useState([]);
@@ -123,91 +149,259 @@
             const [editingContact, setEditingContact] = useState(null);
             const [loading, setLoading] = useState(true);
 
-            // Load data on mount
             useEffect(() => {
-                const loadedFirms = storage.get('ib-crm-firms-v2') || [];
-                const loadedContacts = storage.get('ib-crm-contacts-v2') || [];
-                const loadedInteractions = storage.get('ib-crm-interactions') || [];
-                const loadedReminders = storage.get('ib-crm-reminders') || [];
-                
-                setFirms(loadedFirms);
-                setContacts(loadedContacts);
-                setInteractions(loadedInteractions);
-                setReminders(loadedReminders);
-                setLoading(false);
+                supabase.auth.getSession().then(({ data: { session } }) => {
+                    setSession(session);
+                    if (session) fetchData();
+                    else setLoading(false);
+                });
+
+                const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+                    setSession(session);
+                    if (session) fetchData();
+                    else setLoading(false);
+                });
+
+                return () => subscription.unsubscribe();
             }, []);
 
-            // Save data when changed
-            useEffect(() => {
-                if (!loading) storage.set('ib-crm-firms-v2', firms);
-            }, [firms, loading]);
+            const fetchData = async () => {
+                setLoading(true);
+                try {
+                    const { data: firmsData } = await supabase.from('firms').select('*');
+                    const { data: contactsData } = await supabase.from('contacts').select('*');
+                    const { data: interactionsData } = await supabase.from('interactions').select('*');
+                    const { data: remindersData } = await supabase.from('reminders').select('*');
 
-            useEffect(() => {
-                if (!loading) storage.set('ib-crm-contacts-v2', contacts);
-            }, [contacts, loading]);
-
-            useEffect(() => {
-                if (!loading) storage.set('ib-crm-interactions', interactions);
-            }, [interactions, loading]);
-
-            useEffect(() => {
-                if (!loading) storage.set('ib-crm-reminders', reminders);
-            }, [reminders, loading]);
-
-            const addFirm = (firm) => {
-                setFirms([...firms, { ...firm, id: Date.now() }]);
-                setShowAddFirm(false);
+                    if (firmsData) setFirms(firmsData);
+                    if (contactsData) setContacts(contactsData);
+                    if (interactionsData) setInteractions(interactionsData);
+                    if (remindersData) setReminders(remindersData);
+                } catch (error) {
+                    console.error('Error fetching data:', error);
+                } finally {
+                    setLoading(false);
+                }
             };
 
-            const updateFirm = (id, updates) => {
-                setFirms(firms.map(f => f.id === id ? { ...f, ...updates } : f));
+            const addFirm = async (firm) => {
+                try {
+                    const { data, error } = await supabase.from('firms').insert([{ ...firm, user_id: session.user.id }]).select();
+                    if (error) throw error;
+                    setFirms([...firms, data[0]]);
+                    setShowAddFirm(false);
+                } catch (error) {
+                    alert('Error adding firm: ' + error.message);
+                }
             };
 
-            const deleteFirm = (id) => {
+            const updateFirm = async (id, updates) => {
+                try {
+                    const { error } = await supabase.from('firms').update(updates).eq('id', id);
+                    if (error) throw error;
+                    setFirms(firms.map(f => f.id === id ? { ...f, ...updates } : f));
+                } catch (error) {
+                    alert('Error updating firm: ' + error.message);
+                }
+            };
+
+            const deleteFirm = async (id) => {
                 if (confirm('Delete this firm and all associated contacts?')) {
-                    setFirms(firms.filter(f => f.id !== id));
-                    setContacts(contacts.filter(c => c.firmId !== id));
+                    try {
+                        const { error } = await supabase.from('firms').delete().eq('id', id);
+                        if (error) throw error;
+                        setFirms(firms.filter(f => f.id !== id));
+                        setContacts(contacts.filter(c => c.firm_id !== id));
+                    } catch (error) {
+                        alert('Error deleting firm: ' + error.message);
+                    }
                 }
             };
 
-            const addContact = (contact) => {
-                if (editingContact) {
-                    setContacts(contacts.map(c => c.id === editingContact.id ? { ...c, ...contact } : c));
-                    setEditingContact(null);
-                } else {
-                    setContacts([...contacts, { ...contact, id: Date.now() }]);
+            const addContact = async (contact) => {
+                try {
+                    if (editingContact) {
+                        const { error } = await supabase.from('contacts').update(contact).eq('id', editingContact.id);
+                        if (error) throw error;
+                        setContacts(contacts.map(c => c.id === editingContact.id ? { ...c, ...contact } : c));
+                        setEditingContact(null);
+                    } else {
+                        const { data, error } = await supabase.from('contacts').insert([{ ...contact, user_id: session.user.id }]).select();
+                        if (error) throw error;
+                        setContacts([...contacts, data[0]]);
+                    }
+                    setShowAddContact(false);
+                } catch (error) {
+                    alert('Error saving contact: ' + error.message);
                 }
-                setShowAddContact(false);
             };
 
-            const deleteContact = (id) => {
+            const deleteContact = async (id) => {
                 if (confirm('Delete this contact and all associated interactions?')) {
-                    setContacts(contacts.filter(c => c.id !== id));
-                    setInteractions(interactions.filter(i => i.contactId !== id));
+                    try {
+                        const { error } = await supabase.from('contacts').delete().eq('id', id);
+                        if (error) throw error;
+                        setContacts(contacts.filter(c => c.id !== id));
+                        setInteractions(interactions.filter(i => i.contact_id !== id));
+                    } catch (error) {
+                        alert('Error deleting contact: ' + error.message);
+                    }
                 }
             };
 
-            const addInteraction = (interaction) => {
-                setInteractions([...interactions, { ...interaction, id: Date.now() }]);
+            const addInteraction = async (interaction) => {
+                try {
+                    const { data, error } = await supabase.from('interactions').insert([{ ...interaction, user_id: session.user.id }]).select();
+                    if (error) throw error;
+                    setInteractions([...interactions, data[0]]);
+                } catch (error) {
+                    alert('Error adding interaction: ' + error.message);
+                }
             };
 
-            const deleteInteraction = (id) => {
+            const deleteInteraction = async (id) => {
                 if (confirm('Delete this interaction?')) {
-                    setInteractions(interactions.filter(i => i.id !== id));
+                    try {
+                        const { error } = await supabase.from('interactions').delete().eq('id', id);
+                        if (error) throw error;
+                        setInteractions(interactions.filter(i => i.id !== id));
+                    } catch (error) {
+                        alert('Error deleting interaction: ' + error.message);
+                    }
                 }
             };
 
-            const addReminder = (reminder) => {
-                setReminders([...reminders, { ...reminder, id: Date.now(), completed: false }]);
-                setShowAddReminder(false);
+            const addReminder = async (reminder) => {
+                try {
+                    const { data, error } = await supabase.from('reminders').insert([{ ...reminder, completed: false, user_id: session.user.id }]).select();
+                    if (error) throw error;
+                    setReminders([...reminders, data[0]]);
+                    setShowAddReminder(false);
+                } catch (error) {
+                    alert('Error adding reminder: ' + error.message);
+                }
             };
 
-            const toggleReminder = (id) => {
-                setReminders(reminders.map(r => r.id === id ? { ...r, completed: !r.completed } : r));
+            const toggleReminder = async (id) => {
+                try {
+                    const reminder = reminders.find(r => r.id === id);
+                    const { error } = await supabase.from('reminders').update({ completed: !reminder.completed }).eq('id', id);
+                    if (error) throw error;
+                    setReminders(reminders.map(r => r.id === id ? { ...r, completed: !r.completed } : r));
+                } catch (error) {
+                    alert('Error updating reminder: ' + error.message);
+                }
             };
 
-            const deleteReminder = (id) => {
-                setReminders(reminders.filter(r => r.id !== id));
+            const deleteReminder = async (id) => {
+                try {
+                    const { error } = await supabase.from('reminders').delete().eq('id', id);
+                    if (error) throw error;
+                    setReminders(reminders.filter(r => r.id !== id));
+                } catch (error) {
+                    alert('Error deleting reminder: ' + error.message);
+                }
+            };
+
+            const handleImport = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = async (event) => {
+                    try {
+                        const jsonData = JSON.parse(event.target.result);
+                        if (!confirm(`Import data from ${jsonData.exportDate ? new Date(jsonData.exportDate).toLocaleDateString() : 'file'}? This will add to your existing data.`)) return;
+                        
+                        setLoading(true);
+                        const userId = session.user.id;
+                        const idMapping = { firms: {}, contacts: {} };
+
+                        // 1. Import Firms
+                        for (const firm of jsonData.firms || []) {
+                            const oldId = firm.id;
+                            const { data, error } = await supabase.from('firms').insert([{
+                                name: firm.name,
+                                division: firm.division,
+                                office: firm.office,
+                                ranking: firm.ranking,
+                                status: firm.status,
+                                notes: firm.notes,
+                                user_id: userId
+                            }]).select();
+                            
+                            if (error) throw error;
+                            if (data && data[0]) idMapping.firms[oldId] = data[0].id;
+                        }
+
+                        // 2. Import Contacts
+                        for (const contact of jsonData.contacts || []) {
+                            const oldId = contact.id;
+                            const oldFirmId = contact.firmId || contact.firm_id;
+                            const newFirmId = idMapping.firms[oldFirmId];
+                            
+                            if (newFirmId) {
+                                const { data, error } = await supabase.from('contacts').insert([{
+                                    name: contact.name,
+                                    title: contact.title,
+                                    email: contact.email,
+                                    phone: contact.phone,
+                                    linkedin: contact.linkedin,
+                                    connection_type: contact.connectionType || contact.connection_type,
+                                    status: contact.status,
+                                    notes: contact.notes,
+                                    firm_id: newFirmId,
+                                    user_id: userId
+                                }]).select();
+                                
+                                if (error) throw error;
+                                if (data && data[0]) idMapping.contacts[oldId] = data[0].id;
+                            }
+                        }
+
+                        // 3. Import Interactions
+                        for (const interaction of jsonData.interactions || []) {
+                            const oldContactId = interaction.contactId || interaction.contact_id;
+                            const newContactId = idMapping.contacts[oldContactId];
+                            
+                            if (newContactId) {
+                                await supabase.from('interactions').insert([{
+                                    type: interaction.type,
+                                    date: interaction.date,
+                                    notes: interaction.notes,
+                                    contact_id: newContactId,
+                                    user_id: userId
+                                }]);
+                            }
+                        }
+
+                        // 4. Import Reminders
+                        for (const reminder of jsonData.reminders || []) {
+                            const oldContactId = reminder.contactId || reminder.contact_id;
+                            const newContactId = idMapping.contacts[oldContactId];
+                            
+                            if (newContactId) {
+                                await supabase.from('reminders').insert([{
+                                    title: reminder.title,
+                                    date: reminder.date,
+                                    notes: reminder.notes,
+                                    completed: reminder.completed || false,
+                                    contact_id: newContactId,
+                                    user_id: userId
+                                }]);
+                            }
+                        }
+
+                        alert('Import successful!');
+                        fetchData();
+                    } catch (error) {
+                        console.error('Import error:', error);
+                        alert('Error importing data: ' + error.message);
+                        setLoading(false);
+                    }
+                };
+                reader.readAsText(file);
+                e.target.value = '';
             };
 
             if (loading) {
@@ -216,6 +410,10 @@
                         <div className="text-xl text-gray-600">Loading...</div>
                     </div>
                 );
+            }
+
+            if (!session) {
+                return <Auth />;
             }
 
             return (
@@ -229,63 +427,22 @@
                                     <p className="text-blue-100 text-sm mt-1">Track firms, contacts, and applications</p>
                                 </div>
                                 <div className="flex gap-2">
-                                    <button
-                                        onClick={() => {
-                                            const data = {
-                                                firms,
-                                                contacts,
-                                                interactions,
-                                                reminders,
-                                                exportDate: new Date().toISOString()
-                                            };
-                                            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                                            const url = URL.createObjectURL(blob);
-                                            const a = document.createElement('a');
-                                            a.href = url;
-                                            a.download = `ib-crm-backup-${new Date().toISOString().split('T')[0]}.json`;
-                                            a.click();
-                                            URL.revokeObjectURL(url);
-                                        }}
-                                        className="bg-blue-500 hover:bg-blue-400 px-3 py-1 rounded text-sm flex items-center gap-1"
-                                        title="Export your data"
-                                    >
-                                        <i className="fas fa-download"></i>
-                                        <span className="hidden md:inline">Export</span>
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            const input = document.createElement('input');
-                                            input.type = 'file';
-                                            input.accept = '.json';
-                                            input.onchange = (e) => {
-                                                const file = e.target.files[0];
-                                                if (file) {
-                                                    const reader = new FileReader();
-                                                    reader.onload = (event) => {
-                                                        try {
-                                                            const data = JSON.parse(event.target.result);
-                                                            if (confirm(`Import data from ${data.exportDate ? new Date(data.exportDate).toLocaleDateString() : 'backup'}?\n\nThis will replace all current data. Make sure you've exported your current data first!`)) {
-                                                                setFirms(data.firms || []);
-                                                                setContacts(data.contacts || []);
-                                                                setInteractions(data.interactions || []);
-                                                                setReminders(data.reminders || []);
-                                                                alert('Data imported successfully!');
-                                                            }
-                                                        } catch (error) {
-                                                            alert('Error importing data. Please check the file format.');
-                                                            console.error(error);
-                                                        }
-                                                    };
-                                                    reader.readAsText(file);
-                                                }
-                                            };
-                                            input.click();
-                                        }}
-                                        className="bg-blue-500 hover:bg-blue-400 px-3 py-1 rounded text-sm flex items-center gap-1"
-                                        title="Import your data"
-                                    >
+                                    <label className="bg-blue-500 hover:bg-blue-400 px-3 py-1 rounded text-sm flex items-center gap-1 cursor-pointer text-white">
                                         <i className="fas fa-upload"></i>
-                                        <span className="hidden md:inline">Import</span>
+                                        <span className="hidden md:inline">Import JSON</span>
+                                        <input
+                                            type="file"
+                                            accept=".json"
+                                            onChange={handleImport}
+                                            className="hidden"
+                                        />
+                                    </label>
+                                    <button
+                                        onClick={() => supabase.auth.signOut()}
+                                        className="bg-blue-700 hover:bg-blue-800 px-3 py-1 rounded text-sm flex items-center gap-1"
+                                    >
+                                        <i className="fas fa-sign-out-alt"></i>
+                                        <span className="hidden md:inline">Sign Out</span>
                                     </button>
                                 </div>
                             </div>
@@ -395,7 +552,7 @@
                     {selectedFirm && (
                         <FirmDetailModal
                             firm={selectedFirm}
-                            contacts={contacts.filter(c => c.firmId === selectedFirm.id)}
+                            contacts={contacts.filter(c => c.firm_id === selectedFirm.id)}
                             interactions={interactions}
                             onClose={() => setSelectedFirm(null)}
                             onUpdateFirm={updateFirm}
@@ -404,8 +561,8 @@
                     {selectedContact && (
                         <ContactDetailModal
                             contact={selectedContact}
-                            firm={firms.find(f => f.id === selectedContact.firmId)}
-                            interactions={interactions.filter(i => i.contactId === selectedContact.id)}
+                            firm={firms.find(f => f.id === selectedContact.firm_id)}
+                            interactions={interactions.filter(i => i.contact_id === selectedContact.id)}
                             onClose={() => setSelectedContact(null)}
                             onAddInteraction={addInteraction}
                             onDeleteInteraction={deleteInteraction}
@@ -426,12 +583,15 @@
 
             // Get last contact date for each firm
             const getLastContactDate = (firmId) => {
-                const firmContacts = contacts.filter(c => c.firmId === firmId);
+                const firmContacts = contacts.filter(c => c.firm_id === firmId);
                 const firmInteractions = interactions.filter(i => 
-                    firmContacts.some(c => c.id === i.contactId)
+                    firmContacts.some(c => c.id === i.contact_id)
                 );
                 if (firmInteractions.length === 0) return null;
-                const dates = firmInteractions.map(i => new Date(i.date));
+                const dates = firmInteractions
+                    .map(i => new Date(i.date))
+                    .filter(d => !isNaN(d.getTime()));
+                if (dates.length === 0) return null;
                 return new Date(Math.max(...dates));
             };
 
@@ -543,7 +703,7 @@
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {sortedFirms.map(firm => {
-                                const firmContacts = contacts.filter(c => c.firmId === firm.id);
+                                const firmContacts = contacts.filter(c => c.firm_id === firm.id);
                                 const lastContact = getLastContactDate(firm.id);
                                 return (
                                     <div
@@ -592,7 +752,7 @@
                                                 <i className="fas fa-users mr-2"></i>
                                                 {firmContacts.length} contact{firmContacts.length !== 1 ? 's' : ''}
                                             </div>
-                                            {lastContact && (
+                                            {lastContact && !isNaN(lastContact.getTime()) && (
                                                 <div className="text-xs">
                                                     Last: {lastContact.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                                 </div>
@@ -612,7 +772,7 @@
             const [filterStatus, setFilterStatus] = useState('all');
 
             const filteredContacts = contacts.filter(contact => {
-                if (filterFirm !== 'all' && contact.firmId !== parseInt(filterFirm)) return false;
+                if (filterFirm !== 'all' && contact.firm_id !== parseInt(filterFirm)) return false;
                 if (filterStatus !== 'all' && contact.status !== filterStatus) return false;
                 return true;
             });
@@ -678,8 +838,8 @@
                                     </thead>
                                     <tbody className="divide-y divide-gray-200">
                                         {filteredContacts.map(contact => {
-                                            const firm = firms.find(f => f.id === contact.firmId);
-                                            const contactInteractions = interactions.filter(i => i.contactId === contact.id);
+                                            const firm = firms.find(f => f.id === contact.firm_id);
+                                            const contactInteractions = interactions.filter(i => i.contact_id === contact.id);
                                             return (
                                                 <tr key={contact.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => onSelectContact(contact)}>
                                                     <td className="px-6 py-4 whitespace-nowrap">
@@ -695,7 +855,7 @@
                                                         )}
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                        {contact.connectionType || '-'}
+                                                        {contact.connection_type || '-'}
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                         {contactInteractions.length}
@@ -808,8 +968,8 @@
                     ) : (
                         <div className="space-y-3">
                             {displayReminders.map(reminder => {
-                                const contact = contacts.find(c => c.id === reminder.contactId);
-                                const firm = contact ? firms.find(f => f.id === contact.firmId) : null;
+                                const contact = contacts.find(c => c.id === reminder.contact_id);
+                                const firm = contact ? firms.find(f => f.id === contact.firm_id) : null;
                                 const isPast = reminder.date < today;
                                 const isToday = reminder.date === today;
 
@@ -847,7 +1007,11 @@
                                                             isPast ? 'bg-red-100 text-red-800' :
                                                             'bg-gray-100 text-gray-800'
                                                         }`}>
-                                                            {isToday ? 'Today' : new Date(reminder.date).toLocaleDateString()}
+                                                            {isToday ? 'Today' : (
+                                                                !isNaN(new Date(reminder.date).getTime()) 
+                                                                    ? new Date(reminder.date).toLocaleDateString() 
+                                                                    : 'Invalid Date'
+                                                            )}
                                                         </span>
                                                         <button
                                                             onClick={() => onDeleteReminder(reminder.id)}
@@ -1246,19 +1410,19 @@
         function AddContactModal({ firms, contact, onClose, onAdd }) {
             const [formData, setFormData] = useState(contact || {
                 name: '',
-                firmId: firms[0]?.id || '',
+                firm_id: firms[0]?.id || '',
                 title: '',
                 email: '',
                 phone: '',
                 linkedin: '',
-                connectionType: '',
+                connection_type: '',
                 status: 'To Reach Out',
                 notes: ''
             });
 
             const handleSubmit = (e) => {
                 e.preventDefault();
-                if (formData.name.trim() && formData.firmId) {
+                if (formData.name.trim() && formData.firm_id) {
                     onAdd(formData);
                 }
             };
@@ -1286,8 +1450,8 @@
                                         Firm *
                                     </label>
                                     <select
-                                        value={formData.firmId}
-                                        onChange={(e) => setFormData({ ...formData, firmId: parseInt(e.target.value) })}
+                                        value={formData.firm_id}
+                                        onChange={(e) => setFormData({ ...formData, firm_id: parseInt(e.target.value) })}
                                         className="w-full border rounded-lg px-3 py-2"
                                         required
                                     >
@@ -1348,8 +1512,8 @@
                                     </label>
                                     <input
                                         type="text"
-                                        value={formData.connectionType}
-                                        onChange={(e) => setFormData({ ...formData, connectionType: e.target.value })}
+                                        value={formData.connection_type}
+                                        onChange={(e) => setFormData({ ...formData, connection_type: e.target.value })}
                                         placeholder="e.g., Same school, Same hometown, Alumni network"
                                         className="w-full border rounded-lg px-3 py-2"
                                     />
@@ -1415,7 +1579,7 @@
                 e.preventDefault();
                 onAddInteraction({
                     ...newInteraction,
-                    contactId: contact.id
+                    contact_id: contact.id
                 });
                 setNewInteraction({
                     type: 'Email Sent',
@@ -1464,10 +1628,10 @@
                                     </a>
                                 </div>
                             )}
-                            {contact.connectionType && (
+                            {contact.connection_type && (
                                 <div className="flex items-center text-sm">
                                     <i className="fas fa-link w-5 text-gray-500"></i>
-                                    <span className="ml-2 text-gray-700">Connection: {contact.connectionType}</span>
+                                    <span className="ml-2 text-gray-700">Connection: {contact.connection_type}</span>
                                 </div>
                             )}
                             <div className="flex items-center text-sm">
@@ -1582,7 +1746,9 @@
                                                 <div>
                                                     <span className="font-medium text-gray-900">{interaction.type}</span>
                                                     <span className="text-sm text-gray-500 ml-3">
-                                                        {new Date(interaction.date).toLocaleDateString()}
+                                                        {!isNaN(new Date(interaction.date).getTime()) 
+                                                            ? new Date(interaction.date).toLocaleDateString() 
+                                                            : ''}
                                                     </span>
                                                 </div>
                                                 <button
@@ -1607,7 +1773,7 @@
 
         function AddReminderModal({ contacts, firms, preselectedContact, onClose, onAdd }) {
             const [formData, setFormData] = useState({
-                contactId: preselectedContact?.id || contacts[0]?.id || '',
+                contact_id: preselectedContact?.id || contacts[0]?.id || '',
                 title: '',
                 date: new Date().toISOString().split('T')[0],
                 notes: ''
@@ -1615,7 +1781,7 @@
 
             const handleSubmit = (e) => {
                 e.preventDefault();
-                if (formData.title.trim() && formData.contactId) {
+                if (formData.title.trim() && formData.contact_id) {
                     onAdd(formData);
                 }
             };
@@ -1631,14 +1797,14 @@
                                         Contact *
                                     </label>
                                     <select
-                                        value={formData.contactId}
-                                        onChange={(e) => setFormData({ ...formData, contactId: parseInt(e.target.value) })}
+                                        value={formData.contact_id}
+                                        onChange={(e) => setFormData({ ...formData, contact_id: parseInt(e.target.value) })}
                                         className="w-full border rounded-lg px-3 py-2"
                                         required
                                         disabled={!!preselectedContact}
                                     >
                                         {contacts.map(contact => {
-                                            const firm = firms.find(f => f.id === contact.firmId);
+                                            const firm = firms.find(f => f.id === contact.firm_id);
                                             return (
                                                 <option key={contact.id} value={contact.id}>
                                                     {contact.name} - {firm?.name} ({firm?.office})
@@ -1858,7 +2024,7 @@
                             ) : (
                                 <div className="space-y-3">
                                     {contacts.map(contact => {
-                                        const contactInteractions = interactions.filter(i => i.contactId === contact.id);
+                                        const contactInteractions = interactions.filter(i => i.contact_id === contact.id);
                                         return (
                                             <div key={contact.id} className="border rounded-lg p-4">
                                                 <div className="flex justify-between items-start">
@@ -1870,10 +2036,10 @@
                                                         {contact.email && (
                                                             <p className="text-sm text-gray-500">{contact.email}</p>
                                                         )}
-                                                        {contact.connectionType && (
+                                                        {contact.connection_type && (
                                                             <p className="text-sm text-blue-600 mt-1">
                                                                 <i className="fas fa-link mr-1"></i>
-                                                                {contact.connectionType}
+                                                                {contact.connection_type}
                                                             </p>
                                                         )}
                                                         <p className="text-xs text-gray-500 mt-1">
