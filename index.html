@@ -83,6 +83,15 @@
             'Other'
         ];
 
+        const REMINDER_TYPES = [
+            'Follow-up',
+            'Assessment',
+            'HireVue',
+            'Interview',
+            'Application Deadline',
+            'Other'
+        ];
+
         // Location data - major financial centers
         const CITIES = {
             'United States': ['New York', 'San Francisco', 'Chicago', 'Boston', 'Los Angeles', 'Houston', 'Charlotte', 'Dallas', 'Miami', 'Atlanta'],
@@ -499,6 +508,7 @@
             const [sortBy, setSortBy] = useState('ranking');
             const [filterLocation, setFilterLocation] = useState('all');
             const [filterStatus, setFilterStatus] = useState('all');
+            const [viewMode, setViewMode] = useState('grid');
 
             // Get unique locations
             const locations = [...new Set(firms.map(f => f.office).filter(Boolean))].sort();
@@ -547,12 +557,22 @@
                 <div>
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                         <h2 className="text-2xl font-bold text-navy font-serif">TARGET FIRMS</h2>
-                        <button
-                            onClick={onAddFirm}
-                            className="bg-navy text-white px-4 py-2 rounded text-xs font-bold uppercase tracking-wider hover:bg-navy-light transition-colors shadow-sm"
-                        >
-                            <i className="fas fa-plus mr-2"></i>Add Firm
-                        </button>
+                        <div className="flex gap-3">
+                            <div className="flex bg-slate-100 rounded p-1 border border-slate-200">
+                                <button onClick={() => setViewMode('grid')} className={`px-3 py-1.5 rounded text-xs transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-navy' : 'text-slate-400 hover:text-navy'}`}>
+                                    <i className="fas fa-th-large"></i>
+                                </button>
+                                <button onClick={() => setViewMode('list')} className={`px-3 py-1.5 rounded text-xs transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-navy' : 'text-slate-400 hover:text-navy'}`}>
+                                    <i className="fas fa-list"></i>
+                                </button>
+                            </div>
+                            <button
+                                onClick={onAddFirm}
+                                className="bg-navy text-white px-4 py-2 rounded text-xs font-bold uppercase tracking-wider hover:bg-navy-light transition-colors shadow-sm"
+                            >
+                                <i className="fas fa-plus mr-2"></i>Add Firm
+                            </button>
+                        </div>
                     </div>
 
                     {/* Filters */}
@@ -622,7 +642,7 @@
                                 Add your first firm
                             </button>
                         </div>
-                    ) : (
+                    ) : viewMode === 'grid' ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {sortedFirms.map(firm => {
                                 const firmContacts = contacts.filter(c => c.firm_id === firm.id);
@@ -683,6 +703,70 @@
                                     </div>
                                 );
                             })}
+                        </div>
+                    ) : (
+                        <div className="bg-white rounded border border-slate-200 shadow-sm overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead className="bg-slate-50 border-b border-slate-200">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Rank</th>
+                                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Firm</th>
+                                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Division</th>
+                                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contacts</th>
+                                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Last Contact</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {sortedFirms.map(firm => {
+                                            const firmContacts = contacts.filter(c => c.firm_id === firm.id);
+                                            const lastContact = getLastContactDate(firm.id);
+                                            return (
+                                                <tr key={firm.id} className="hover:bg-slate-50 cursor-pointer transition-colors" onClick={() => onSelectFirm(firm)}>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        {firm.ranking && firm.ranking <= 10 ? (
+                                                            <span className="bg-navy text-white font-bold text-xs w-6 h-6 rounded-full flex items-center justify-center border border-navy">
+                                                                {firm.ranking}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-slate-400 text-xs">-</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <div className="font-bold text-navy">{firm.name}</div>
+                                                        <div className="text-xs text-slate-500 uppercase tracking-wide">{firm.office}</div>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                                                        {firm.division || '-'}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <span className={`px-2 py-1 rounded text-[10px] uppercase tracking-wider font-bold border ${
+                                                            firm.status === 'Accepted' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                            firm.status === 'Offered' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                            firm.status === 'Interview Completed' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                                            firm.status === 'Interview Scheduled' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                                            firm.status === 'HireVue/Assessment Completed' ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                                                            firm.status === 'HireVue/Assessment Pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                            firm.status === 'Applied' ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                                                            firm.status === 'Rejected' ? 'bg-red-50 text-red-700 border-red-200' :
+                                                            'bg-slate-50 text-slate-600 border-slate-200'
+                                                        }`}>
+                                                            {firm.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                                                        {firmContacts.length}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                                                        {lastContact && !isNaN(lastContact.getTime()) ? lastContact.toLocaleDateString() : '-'}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -891,7 +975,8 @@
                         <div className="space-y-3">
                             {displayReminders.map(reminder => {
                                 const contact = contacts.find(c => c.id === reminder.contact_id);
-                                const firm = contact ? firms.find(f => f.id === contact.firm_id) : null;
+                                const linkedFirm = reminder.firm_id ? firms.find(f => f.id === reminder.firm_id) : null;
+                                const firm = contact ? firms.find(f => f.id === contact.firm_id) : linkedFirm;
                                 const isPast = reminder.date < today;
                                 const isToday = reminder.date === today;
 
@@ -917,9 +1002,23 @@
                                                         }`}>
                                                             {reminder.title}
                                                         </h3>
-                                                        {contact && (
-                                                            <p className="text-sm text-slate-600">
-                                                                {contact.name} · {firm?.name} - {firm?.office}
+                                                        {contact ? (
+                                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                                <i className="fas fa-user mr-1"></i> {contact.name} 
+                                                                {firm && <span className="mx-1">·</span>}
+                                                                {firm && <span>{firm.name}</span>}
+                                                            </p>
+                                                        ) : firm ? (
+                                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                                <i className="fas fa-building mr-1"></i> {firm.name} ({firm.office})
+                                                            </p>
+                                                        ) : null}
+                                                        {reminder.type && (
+                                                            <p className="text-[10px] uppercase tracking-wider font-bold text-navy mt-1 inline-block bg-slate-100 px-1.5 py-0.5 rounded">
+                                                                {reminder.type === 'Assessment' && <i className="fas fa-laptop-code mr-1"></i>}
+                                                                {reminder.type === 'Interview' && <i className="fas fa-user-tie mr-1"></i>}
+                                                                {reminder.type === 'HireVue' && <i className="fas fa-video mr-1"></i>}
+                                                                {reminder.type}
                                                             </p>
                                                         )}
                                                     </div>
@@ -1695,16 +1794,26 @@
 
         function AddReminderModal({ contacts, firms, preselectedContact, onClose, onAdd }) {
             const [formData, setFormData] = useState({
-                contact_id: preselectedContact?.id || contacts[0]?.id || '',
+                contact_id: preselectedContact?.id || '',
+                firm_id: '',
                 title: '',
+                type: 'Follow-up',
                 date: new Date().toISOString().split('T')[0],
                 notes: ''
             });
+            
+            // If preselectedContact is passed, we are in "Contact Mode" by default.
+            // Otherwise, user can choose.
+            const [linkType, setLinkType] = useState(preselectedContact ? 'contact' : 'firm');
 
             const handleSubmit = (e) => {
                 e.preventDefault();
-                if (formData.title.trim() && formData.contact_id) {
-                    onAdd(formData);
+                if (formData.title.trim() && (formData.contact_id || formData.firm_id)) {
+                    onAdd({
+                        ...formData,
+                        contact_id: formData.contact_id || null,
+                        firm_id: formData.firm_id || null
+                    });
                 }
             };
 
@@ -1714,25 +1823,80 @@
                         <h2 className="text-xl font-bold mb-4 font-serif text-navy">ADD FOLLOW-UP REMINDER</h2>
                         <form onSubmit={handleSubmit}>
                             <div className="space-y-4">
+                                {/* Link Type Selector */}
+                                {!preselectedContact && (
+                                    <div className="flex bg-slate-100 p-1 rounded border border-slate-200">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setLinkType('firm');
+                                                setFormData({ ...formData, contact_id: '', firm_id: firms[0]?.id || '' });
+                                            }}
+                                            className={`flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded transition-all ${linkType === 'firm' ? 'bg-white shadow-sm text-navy' : 'text-slate-500'}`}
+                                        >
+                                            Link to Firm
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setLinkType('contact');
+                                                setFormData({ ...formData, firm_id: '', contact_id: contacts[0]?.id || '' });
+                                            }}
+                                            className={`flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded transition-all ${linkType === 'contact' ? 'bg-white shadow-sm text-navy' : 'text-slate-500'}`}
+                                        >
+                                            Link to Contact
+                                        </button>
+                                    </div>
+                                )}
+
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">
-                                        Contact *
+                                        {linkType === 'contact' ? 'Contact *' : 'Firm *'}
                                     </label>
-                                    <select
-                                        value={formData.contact_id}
-                                        onChange={(e) => setFormData({ ...formData, contact_id: parseInt(e.target.value) })}
-                                        className="w-full border border-slate-300 rounded px-3 py-2 focus:ring-navy focus:border-navy"
-                                        required
-                                        disabled={!!preselectedContact}
-                                    >
-                                        {contacts.map(contact => {
-                                            const firm = firms.find(f => f.id === contact.firm_id);
-                                            return (
-                                                <option key={contact.id} value={contact.id}>
-                                                    {contact.name} - {firm?.name} ({firm?.office})
+                                    {linkType === 'contact' ? (
+                                        <select
+                                            value={formData.contact_id}
+                                            onChange={(e) => setFormData({ ...formData, contact_id: parseInt(e.target.value) })}
+                                            className="w-full border border-slate-300 rounded px-3 py-2 focus:ring-navy focus:border-navy"
+                                            required
+                                            disabled={!!preselectedContact}
+                                        >
+                                            <option value="">Select a contact...</option>
+                                            {contacts.map(contact => {
+                                                const firm = firms.find(f => f.id === contact.firm_id);
+                                                return (
+                                                    <option key={contact.id} value={contact.id}>
+                                                        {contact.name} - {firm?.name} ({firm?.office})
+                                                    </option>
+                                                );
+                                            })}
+                                        </select>
+                                    ) : (
+                                        <select
+                                            value={formData.firm_id}
+                                            onChange={(e) => setFormData({ ...formData, firm_id: parseInt(e.target.value) })}
+                                            className="w-full border border-slate-300 rounded px-3 py-2 focus:ring-navy focus:border-navy"
+                                            required
+                                        >
+                                            <option value="">Select a firm...</option>
+                                            {firms.map(firm => (
+                                                <option key={firm.id} value={firm.id}>
+                                                    {firm.name} - {firm.office}
                                                 </option>
-                                            );
-                                        })}
+                                            ))}
+                                        </select>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Type</label>
+                                    <select
+                                        value={formData.type}
+                                        onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                                        className="w-full border border-slate-300 rounded px-3 py-2 focus:ring-navy focus:border-navy"
+                                    >
+                                        {REMINDER_TYPES.map(type => (
+                                            <option key={type} value={type}>{type}</option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>
