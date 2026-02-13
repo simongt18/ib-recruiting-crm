@@ -188,6 +188,41 @@
             const [editingContact, setEditingContact] = useState(null);
             const [loading, setLoading] = useState(true);
 
+            // Notification Logic
+            const lastCheckedMinute = React.useRef('');
+
+            useEffect(() => {
+                if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+                    Notification.requestPermission();
+                }
+
+                const checkReminders = () => {
+                    const now = new Date();
+                    const hours = String(now.getHours()).padStart(2, '0');
+                    const minutes = String(now.getMinutes()).padStart(2, '0');
+                    const currentTime = `${hours}:${minutes}`;
+                    const today = now.toISOString().split('T')[0];
+                    
+                    const currentMinuteKey = `${today} ${currentTime}`;
+                    if (lastCheckedMinute.current === currentMinuteKey) return;
+                    lastCheckedMinute.current = currentMinuteKey;
+
+                    reminders.forEach(reminder => {
+                        if (!reminder.completed && reminder.date === today && reminder.time === currentTime) {
+                            if (Notification.permission === 'granted') {
+                                new Notification(reminder.title, {
+                                    body: `Reminder: ${reminder.notes || ''}`,
+                                    icon: 'icon.png'
+                                });
+                            }
+                        }
+                    });
+                };
+
+                const interval = setInterval(checkReminders, 5000); // Check every 5 seconds
+                return () => clearInterval(interval);
+            }, [reminders]);
+
             useEffect(() => {
                 supabase.auth.getSession().then(({ data: { session } }) => {
                     setSession(session);
@@ -295,7 +330,28 @@
                 try {
                     const { data, error } = await supabase.from('interactions').insert([{ ...interaction, user_id: session.user.id }]).select();
                     if (error) throw error;
-                    setInteractions([...interactions, data[0]]);
+                    setInteractions(prev => [...prev, data[0]]);
+
+                    // Automatic 48h Follow-up Reminder
+                    const dateObj = new Date(interaction.date);
+                    dateObj.setDate(dateObj.getDate() + 2);
+                    const reminderDate = dateObj.toISOString().split('T')[0];
+
+                    const autoReminder = {
+                        contact_id: interaction.contact_id,
+                        title: `Follow up: ${interaction.type}`,
+                        type: 'Follow-up',
+                        date: reminderDate,
+                        time: '09:00',
+                        notes: `Automatic follow-up created after logging ${interaction.type}`,
+                        completed: false,
+                        user_id: session.user.id
+                    };
+
+                    const { data: reminderData, error: reminderError } = await supabase.from('reminders').insert([autoReminder]).select();
+                    if (!reminderError && reminderData) {
+                        setReminders(prev => [...prev, reminderData[0]]);
+                    }
                 } catch (error) {
                     alert('Error adding interaction: ' + error.message);
                 }
@@ -922,6 +978,52 @@
             );
         }
 
+        // Calendar Utilities
+        const generateICS = (reminder) => {
+            const title = reminder.title;
+            const notes = reminder.notes || '';
+            const time = reminder.time || '09:00';
+            const startDate = new Date(`${reminder.date}T${time}:00`);
+            const endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // 1 hour duration
+
+            const formatDate = (date) => {
+                return date.toISOString().replace(/-|:|\.\d+/g, '');
+            };
+
+            const icsContent = `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+DTSTART:${formatDate(startDate)}
+DTEND:${formatDate(endDate)}
+SUMMARY:${title}
+DESCRIPTION:${notes}
+END:VEVENT
+END:VCALENDAR`;
+
+            const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+            const link = document.createElement('a');
+            link.href = window.URL.createObjectURL(blob);
+            link.setAttribute('download', `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
+        const openGoogleCalendar = (reminder) => {
+            const title = encodeURIComponent(reminder.title);
+            const notes = encodeURIComponent(reminder.notes || '');
+            const time = reminder.time || '09:00';
+            const startDate = new Date(`${reminder.date}T${time}:00`);
+            const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+
+            const formatDate = (date) => {
+                return date.toISOString().replace(/-|:|\.\d+/g, '');
+            };
+
+            const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${notes}&dates=${formatDate(startDate)}/${formatDate(endDate)}`;
+            window.open(url, '_blank');
+        };
+
         function CalendarView({ reminders, contacts, firms, onAddReminder, onToggleReminder, onDeleteReminder }) {
             const [view, setView] = useState('upcoming');
 
@@ -1022,6 +1124,11 @@
                                                                 {reminder.type}
                                                             </p>
                                                         )}
+                                                        {reminder.time && (
+                                                            <span className="text-xs font-bold text-slate-500 ml-2 bg-slate-100 px-1.5 py-0.5 rounded">
+                                                                <i className="far fa-clock mr-1"></i>{reminder.time}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded border ${
@@ -1046,6 +1153,22 @@
                                                 {reminder.notes && (
                                                     <p className="text-sm text-slate-600 mt-2">{reminder.notes}</p>
                                                 )}
+                                                <div className="flex items-center gap-3 mt-3 pt-2 border-t border-slate-100">
+                                                    <button
+                                                        onClick={() => openGoogleCalendar(reminder)}
+                                                        className="text-slate-400 hover:text-navy text-xs flex items-center gap-1 transition-colors"
+                                                        title="Add to Google Calendar"
+                                                    >
+                                                        <i className="fab fa-google"></i> Add to Google Calendar
+                                                    </button>
+                                                    <button
+                                                        onClick={() => generateICS(reminder)}
+                                                        className="text-slate-400 hover:text-navy text-xs flex items-center gap-1 transition-colors"
+                                                        title="Download .ics for Outlook/Apple"
+                                                    >
+                                                        <i className="fas fa-file-export"></i> Download .ics for Outlook/Apple
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -1800,6 +1923,7 @@
                 title: '',
                 type: 'Follow-up',
                 date: new Date().toISOString().split('T')[0],
+                time: '',
                 notes: ''
             });
             
@@ -1914,16 +2038,31 @@
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">
-                                        Date *
-                                    </label>
-                                    <input
-                                        type="date"
-                                        value={formData.date}
-                                        onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                                        className="w-full border border-slate-300 rounded px-3 py-2 focus:ring-navy focus:border-navy"
-                                        required
-                                    />
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">
+                                                Date *
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={formData.date}
+                                                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                                                className="w-full border border-slate-300 rounded px-3 py-2 focus:ring-navy focus:border-navy"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">
+                                                Time
+                                            </label>
+                                            <input
+                                                type="time"
+                                                value={formData.time}
+                                                onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                                                className="w-full border border-slate-300 rounded px-3 py-2 focus:ring-navy focus:border-navy"
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">
