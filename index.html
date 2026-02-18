@@ -1368,16 +1368,15 @@ END:VCALENDAR`;
 
             useEffect(() => {
                 if (value) {
-                    // Try to parse existing value
-                    const parts = value.split(', ');
-                    if (parts.length >= 2) {
-                        setCity(parts[0]);
-                        // Find country
-                        for (const [countryName, cities] of Object.entries(CITIES)) {
-                            if (cities.includes(parts[0])) {
-                                setCountry(countryName);
-                                break;
-                            }
+                    // Try to parse existing value to set the correct initial state.
+                    // This handles both "New York" from "New York, NY, USA" and "Singapore" from "Singapore".
+                    const potentialCity = value.split(', ')[0];
+
+                    for (const [countryName, cities] of Object.entries(CITIES)) {
+                        if (cities.includes(potentialCity)) {
+                            setCountry(countryName);
+                            setCity(potentialCity);
+                            break;
                         }
                     }
                 }
